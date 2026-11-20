@@ -1,0 +1,12 @@
+# AI models are too large for GitHub (the app downloads them automatically)
+models/*.onnx
+
+# Build output (PyInstaller and Inno Setup)
+dist/
+build/
+Output/
+*.spec
+
+# Python
+__pycache__/
+*.pyc

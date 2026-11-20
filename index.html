@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{APP_NAME}}</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><i class="logo"><img src="logo.png" alt="" onerror="this.remove()"></i><span>{{APP_NAME}}</span></div>
+  <button class="tb" id="bOpen" data-i="upload" data-tip="Upload new image"><span>Upload</span></button>
+  <i class="sep"></i>
+  <button class="ib" id="bUndo" data-i="undo" data-tip="Undo (Ctrl+Z)" aria-label="Undo" disabled></button>
+  <button class="ib" id="bRedo" data-i="redo" data-tip="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled></button>
+  <i class="sep"></i>
+  <div class="segs" id="views" role="group" aria-label="Preview mode">
+    <button data-view="edited" aria-pressed="true">Edited</button>
+    <button data-view="original" aria-pressed="false">Original</button>
+    <button data-view="split" aria-pressed="false">Compare</button>
+    <button data-view="mask" aria-pressed="false">Mask</button>
+  </div>
+  <span class="spacer"></span>
+  <span class="info" id="info"></span>
+  <button class="tb primary" id="bExport" data-i="download">Export</button>
+  <button class="ib end" id="bKeys" data-i="settings" data-tip="Keyboard shortcuts" aria-label="Keyboard shortcuts"></button>
+  <button class="ib end vipb" id="bVip" data-i="crown" data-tip="Early Access" aria-label="Early Access"></button>
+</header>
+<div class="tabs" id="tabs" role="tablist" aria-label="Open images"></div>
+
+<main class="work">
+  <nav class="tools" id="tools" aria-label="Editing tools"></nav>
+  <section class="stage" id="stage">
+    <canvas id="view"></canvas>
+    <div class="drop" id="drop">
+      <div class="card">
+        <span data-i="upload"></span>
+        <h1>Drop an image to start</h1>
+        <p>Or paste from the clipboard with Ctrl+V</p>
+        <button class="tb primary" id="bBrowse">Browse files</button>
+        <small>JPG, PNG, WebP or SVG · up to 60 MB · processed on this computer</small>
+        <small class="credit">Created by {{CREATED_BY}}</small>
+      </div>
+    </div>
+    <div class="hud" id="hud" hidden>
+      <button class="ib" id="zOut" data-tip="Zoom out (-)" aria-label="Zoom out">−</button>
+      <button class="tb" id="zl" data-tip="Zoom to 100% (1)">100%</button>
+      <button class="ib" id="zIn" data-tip="Zoom in (+)" aria-label="Zoom in">+</button>
+      <button class="ib" id="zFit" data-i="fit" data-tip="Fit to screen (0)" aria-label="Fit to screen"></button>
+    </div>
+    <div class="busy" id="busy" hidden><div class="card"><b id="busyT"></b><div class="bar" id="busyBar"><i id="busyB"></i></div></div></div>
+  </section>
+  <aside class="props" id="props" aria-label="Tool properties"></aside>
+</main>
+
+<dialog id="exportDlg">
+  <h2>Export image</h2>
+  <div id="exportBody"></div>
+  <div class="acts"><button class="btn" id="xCancel">Cancel</button><button class="btn primary" id="xGo">Download</button></div>
+</dialog>
+<dialog id="keysDlg">
+  <h2>Keyboard shortcuts</h2>
+  <div class="keys">
+    <span>Undo / Redo</span><span><kbd>Ctrl Z</kbd> <kbd>Ctrl Shift Z</kbd></span>
+    <span>Zoom in / out</span><span><kbd>+</kbd> <kbd>-</kbd></span>
+    <span>Fit / 100%</span><span><kbd>0</kbd> <kbd>1</kbd></span>
+    <span>Pan</span><span><kbd>Space</kbd> + drag</span>
+    <span>Toggle original</span><span><kbd>O</kbd></span>
+    <span>New tab / Close tab</span><span><kbd>Ctrl T</kbd> <kbd>Ctrl W</kbd></span>
+    <span>Next tab</span><span><kbd>Ctrl Tab</kbd></span>
+    <span>Brush size</span><span><kbd>[</kbd> <kbd>]</kbd></span>
+    <span>Eraser / Restore / Magic / Hair</span><span><kbd>E</kbd> <kbd>R</kbd> <kbd>M</kbd> <kbd>H</kbd></span>
+    <span>Move / Select / Background / Crop</span><span><kbd>V</kbd> <kbd>S</kbd> <kbd>B</kbd> <kbd>C</kbd></span>
+    <span>Paint brush / Text</span><span><kbd>P</kbd> <kbd>T</kbd></span>
+    <span>Delete selected text</span><span><kbd>Delete</kbd></span>
+  </div>
+  <button class="btn" id="kClose">Close</button>
+</dialog>
+<dialog id="vipDlg" class="vip">
+  <div class="vip-crown" data-i="crown"></div>
+  <div class="vip-badge">EARLY ACCESS</div>
+  <h2>You're one of the lucky few</h2>
+  <p>You're using {{APP_NAME}} before its public release. Thank you for being part of our early access community.</p>
+  <ul>
+    <li>Every tool unlocked for you</li>
+    <li>Your images never leave this computer</li>
+    <li>Your feedback shapes what comes next</li>
+  </ul>
+  <button class="btn primary" id="vipClose">Let's create</button>
+  <small>Created by {{CREATED_BY}}</small>
+</dialog>
+<dialog id="closeDlg">
+  <h2>Close this tab?</h2>
+  <p class="hint">Any edits you have not exported will be lost.</p>
+  <div class="acts"><button class="btn" id="cCancel">Cancel</button><button class="btn primary" id="cGo">Close tab</button></div>
+</dialog>
+<div id="toast" role="status"></div>
+<input type="file" id="file" accept="image/jpeg,image/png,image/webp,image/svg+xml,.svg" hidden>
+<input type="file" id="bgfile" accept="image/jpeg,image/png,image/webp,image/svg+xml,.svg" hidden>
+<script type="module" src="editor.js"></script>
+</body>
+</html>
