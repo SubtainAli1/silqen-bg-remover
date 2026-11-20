@@ -100,4 +100,4 @@ Each of these projects has its own license. Please check them before using this 
 
 ## Author
 
-Created by **Muhammad Zaheer**
+Created by **SubtainAi**
