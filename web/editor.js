@@ -1,7 +1,7 @@
 /* ============================================================
-   AI ENGINE: app.py ke /remove par tasveer bhejta hai.
-   Dusra model ya server lagana ho to sirf yeh function badlein.
-   Wapsi mein PNG Blob aana chahiye jis ka alpha channel mask ho.
+   AI ENGINE: sends the image to app.py at /remove.
+   To use a different model or server, change only this function.
+   It must return a PNG Blob whose alpha channel is the mask.
    ============================================================ */
 let MODELS=[['isnet-general-use','Balanced',true]];
 function loadModels(init){return fetch('/models').then(r=>r.json()).then(m=>{if(!m.length)return;MODELS=m;
@@ -75,9 +75,9 @@ const octx=()=>doc.orig.getContext('2d');
 const curCrop=()=>S.tool==='crop'?{x:0,y:0,w:doc.w,h:doc.h}:doc.crop;
 
 /* ---------- loading ---------- */
-// SVG: vector file ko editing ke liye saaf pixels mein badalta hai (lambi side kam se kam 2048 px, zyada se zyada 4096 px)
+// SVG: rasterize vector files for editing (long side at least 2048 px, at most 4096 px)
 const isSVG=f=>f.type==='image/svg+xml'||/\.svg$/i.test(f.name||'');
-// SVG ko parh kar saaf (viewBox wala) text aur asal size nikalta hai
+// Parse an SVG: returns normalized text (with a viewBox) and its intrinsic size
 function parseSVG(text){
   const d=new DOMParser().parseFromString(text,'image/svg+xml'),root=d.documentElement;
   if(!root||root.nodeName.toLowerCase()!=='svg'||d.querySelector('parsererror'))throw new Error('Invalid SVG');
@@ -88,10 +88,10 @@ function parseSVG(text){
   if(!(w&&hh))w=hh=1024;
   if(!hasVB)root.setAttribute('viewBox',`0 0 ${w} ${hh}`);
   return{text:new XMLSerializer().serializeToString(d),w,h:hh}}
-// Vector ko kisi bhi size par likhta hai (width/height badal kar)
+// Return the SVG text with a new width/height
 function sizedSVG(text,W,H){const d=new DOMParser().parseFromString(text,'image/svg+xml'),r=d.documentElement;
   r.setAttribute('width',W);r.setAttribute('height',H);return new XMLSerializer().serializeToString(d)}
-// Vector ko W x H pixels par saaf tasveer banata hai
+// Render the SVG to a W x H canvas
 async function rasterSVG(text,W,H){const url=URL.createObjectURL(new Blob([sizedSVG(text,W,H)],{type:'image/svg+xml'}));
   try{const img=new Image();img.src=url;await img.decode();const c=mk(W,H);c.getContext('2d').drawImage(img,0,0,W,H);return c}
   finally{URL.revokeObjectURL(url)}}
@@ -105,7 +105,7 @@ async function loadFile(file){
   if(!/^image\/(jpeg|png|webp)$/.test(file.type)&&!isSVG(file))return toast('Unsupported format. Use JPG, PNG, WebP or SVG.');
   if(file.size>60*1048576)return toast('That file is larger than 60 MB.');
   let bmp;try{bmp=await decodeImage(file)}catch{return toast('This image could not be decoded.')}
-  if(doc){saveTab();tabs.push(blankTab());loadTab(tabs.length-1)}  // tasveer khuli ho to nayi tab mein kholo
+  if(doc){saveTab();tabs.push(blankTab());loadTab(tabs.length-1)}  // open in a new tab if an image is already open
   const svg=bmp.svgText||null,w=bmp.width,hh=bmp.height,orig=mk(w,hh);orig.getContext('2d').drawImage(bmp,0,0);bmp.close?bmp.close():freeCanvas(bmp);
   const mask=mk(w,hh),m=mask.getContext('2d');m.fillStyle='#fff';m.fillRect(0,0,w,hh);
   doc={w,h:hh,orig,mask,px:null,svg,paint:null,texts:[],name:(file.name||'image').replace(/\.[^.]+$/,''),crop:{x:0,y:0,w,h:hh}};
@@ -120,9 +120,9 @@ function updInfo(){const c=doc.crop;$('#info').textContent=`${c.w} × ${c.h} px 
 const copyCanvas=src=>{const c=mk(src.width,src.height);c.getContext('2d').drawImage(src,0,0);return c};
 const snap=()=>({mask:copyCanvas(doc.mask),paint:doc.paint&&copyCanvas(doc.paint),texts:structuredClone(doc.texts),crop:{...doc.crop},sub:{...S.sub}});
 const freeSnap=s=>{freeCanvas(s.mask);freeCanvas(s.paint)};
-// Memory: canvas ka size 0 karne se us ki RAM foran wapas mil jati hai
+// Memory: setting a canvas to 0x0 releases its memory immediately
 const freeCanvas=c=>{if(c){c.width=0;c.height=0}};
-// Undo ke qadam tasveer ke size aur khuli tabs ke hisab se (sab tabs mil kar taqreeban 400 MB tak)
+// Undo depth depends on image size and open tabs (about 400 MB across all tabs)
 const histMax=()=>clamp(Math.floor(400e6/(Math.max(1,tabs.length)*doc.w*doc.h*4*(doc.paint?2:1))),3,12);
 function pushHist(){bbox=null;hist.push(snap());while(hist.length>histMax())freeSnap(hist.shift());
   redoS.forEach(freeSnap);redoS=[];updHist()}
@@ -136,9 +136,9 @@ function redo(){if(!doc||!redoS.length)return;hist.push(snap());applySnap(redoS.
 function updHist(){$('#bUndo').disabled=!hist.length;$('#bRedo').disabled=!redoS.length}
 function resetMask(){pushHist();const m=mctx();m.globalCompositeOperation='source-over';m.fillStyle='#fff';m.fillRect(0,0,doc.w,doc.h);render()}
 
-/* ---------- tabs (Photoshop jaisi) ---------- */
+/* ---------- tabs ---------- */
 let tabs=[],cur=-1,closing=-1;
-const PER_TAB=['edge','sub','bg','shadow'];   // ye settings har tab ki apni hoti hain
+const PER_TAB=['edge','sub','bg','shadow'];   // settings stored separately for each tab
 function blankTab(){return{doc:null,hist:[],redoS:[],V:{x:0,y:0,z:1},view:'edited',aiMsg:'',
   st:{edge:{feather:0,shift:0},sub:{scale:100,x:0,y:0,rot:0,pv:null},bg:{type:'none',color:'#ffffff',c1:'#f1f2f4',c2:'#b9bec6',angle:180,blur:24,img:null},shadow:{on:false,opacity:35,blur:26,dist:22,angle:60}}}}
 function saveTab(){const t=tabs[cur];if(!t)return;t.doc=doc;t.hist=hist;t.redoS=redoS;t.V={...V};t.view=S.view;t.aiMsg=aiMsg;PER_TAB.forEach(k=>t.st[k]=S[k])}
@@ -155,7 +155,7 @@ function switchTab(i){if(i===cur||tabBusy())return;saveTab();loadTab(i)}
 function askClose(i){if(tabBusy())return;saveTab();const t=tabs[i];
   if(t.doc&&t.hist.length){closing=i;$('#closeDlg').showModal()}else closeTab(i)}
 function closeTab(i){saveTab();freeTab(tabs[i]);tabs.splice(i,1);if(!tabs.length)tabs.push(blankTab());
-  const n=i<cur?cur-1:i===cur?Math.min(i,tabs.length-1):cur;loadTab(n)}   // RAM foran khali
+  const n=i<cur?cur-1:i===cur?Math.min(i,tabs.length-1):cur;loadTab(n)}   // frees memory immediately
 function renderTabs(){const el=$('#tabs');
   el.replaceChildren(...tabs.map((t,i)=>{const d=i===cur?doc:t.doc,name=d?d.name:'New tab';
     return h('div',{class:'tab'+(i===cur?' on':''),role:'tab','aria-selected':String(i===cur),title:name,
@@ -186,7 +186,7 @@ async function runAI(){
 }
 
 /* ---------- compositing (non-destructive: original + mask) ---------- */
-// o: {src, K, out, cut, sil} — export ke waqt vector ko bari resolution par banane ke liye
+// o: {src, K, out, cut, sil} — lets export render SVG sources at a higher resolution
 function compose(o={}){
   const{w,h:hh,mask}=doc,src=o.src||doc.orig,K=o.K||1,out=o.out||comp,cutC=o.cut||cut,silC=o.sil||sil,e=S.edge,u=Math.max(w,hh)/1000;
   maskOut=mask;
@@ -214,8 +214,8 @@ function compose(o={}){
   }
   k.save();xf(k);k.drawImage(cutC,0,0,w,hh);k.restore();
   if(doc.paint)k.drawImage(doc.paint,0,0,w,hh);                                   // paint layer
-  if(strokeC){k.globalAlpha=S.paint.opacity/100;k.drawImage(strokeC,0,0,w,hh);k.globalAlpha=1}  // chalta hua stroke
-  drawTexts(k);                                                                   // text sab se upar
+  if(strokeC){k.globalAlpha=S.paint.opacity/100;k.drawImage(strokeC,0,0,w,hh);k.globalAlpha=1}  // stroke in progress
+  drawTexts(k);                                                                   // text on top
   k.setTransform(1,0,0,1,0,0);
 }
 function render(){compDirty=true;redraw()}
@@ -259,8 +259,8 @@ function zoomAt(px,py,nz){nz=clamp(nz,.02,32);V.x=px-(px-V.x)*nz/V.z;V.y=py-(py-
 const zoomC=f=>{const r=stage.getBoundingClientRect();zoomAt(r.width/2,r.height/2,f)};
 new ResizeObserver(()=>redraw()).observe(stage);
 
-/* ---------- move tool (Canva jaisa) ---------- */
-// Mask se subject ka dabba (bounding box) nikalta hai, chhoti copy par taa ke tez ho
+/* ---------- move tool ---------- */
+// Subject bounding box from the mask (computed on a small copy for speed)
 function subjectBox(){if(bbox)return bbox;const{w,h:hh}=doc,sc=Math.min(1,512/Math.max(w,hh)),sw=Math.max(1,Math.round(w*sc)),sh=Math.max(1,Math.round(hh*sc)),
   c=mk(sw,sh),x=c.getContext('2d',{willReadFrequently:true});x.drawImage(doc.mask,0,0,sw,sh);const d=x.getImageData(0,0,sw,sh).data;
   let x0=sw,y0=sh,x1=-1,y1=-1;
@@ -281,7 +281,7 @@ function moveHit(p){const R=boxOnScreen();
   return u.x>=R.x&&u.x<=R.x+R.w&&u.y>=R.y&&u.y<=R.y+R.h?'move':null}
 const r1=n=>Math.round(n*10)/10;
 
-/* ---------- paint brush (apni alag layer) ---------- */
+/* ---------- paint brush (separate layer) ---------- */
 const hexRGB=c=>{const n=parseInt(c.slice(1),16);return[(n>>16)&255,(n>>8)&255,n&255].join(',')};
 function paintStamp(q){const P=S.paint,er=P.mode==='erase',x=(er?doc.paint:strokeC).getContext('2d'),r=P.size/2,hard=Math.min(.999,1-P.soft/100),
     col=er?'0,0,0':hexRGB(P.color),g=x.createRadialGradient(q.x,q.y,0,q.x,q.y,r);
@@ -322,7 +322,7 @@ function deleteText(){if(!curText())return;pushHist();doc.texts=doc.texts.filter
 
 /* ---------- brushes ---------- */
 const toDoc=e=>{const r=view.getBoundingClientRect(),c=curCrop(),sx=e.clientX-r.left,sy=e.clientY-r.top;return{sx,sy,x:(sx-V.x)/V.z+c.x,y:(sy-V.y)/V.z+c.y}};
-// Subject ki jagah: pehle size + khiskana, phir pivot ke gird ghumana
+// Subject transform: scale + offset, then rotate around the pivot
 const rotAbout=(p,c,a)=>{const cs=Math.cos(a),sn=Math.sin(a),dx=p.x-c.x,dy=p.y-c.y;return{x:c.x+dx*cs-dy*sn,y:c.y+dx*sn+dy*cs}};
 const fwd=(x,y)=>{const s=S.sub.scale/100,W=doc.w,H=doc.h;return{x:(x-W/2)*s+W/2+S.sub.x/100*W,y:(y-H/2)*s+H/2+S.sub.y/100*H}};
 const rotRad=()=>(S.sub.rot||0)*Math.PI/180;
@@ -338,13 +338,13 @@ function dab(q,erase){const m=mctx(),r=S.brush.size/2,hard=Math.min(.999,1-S.bru
   m.globalCompositeOperation=erase?'destination-out':'source-over';m.fillStyle=g;m.beginPath();m.arc(q.x,q.y,r,0,7);m.fill();m.globalCompositeOperation='source-over'}
 function region(q){const r=Math.ceil(S.brush.size/2),x0=clamp(Math.floor(q.x-r),0,doc.w),y0=clamp(Math.floor(q.y-r),0,doc.h),x1=clamp(Math.ceil(q.x+r),0,doc.w),y1=clamp(Math.ceil(q.y+r),0,doc.h),w=x1-x0,hh=y1-y0;
   if(w<1||hh<1)return null;return{x0,y0,w,h:hh,r,o:octx().getImageData(x0,y0,w,hh).data,mi:mctx().getImageData(x0,y0,w,hh)}}
-// Magic brush: sirf wo pixels badalta hai jin ka rang pehle click wale rang se milta ho.
+// Magic brush: only affects pixels whose colour matches the colour under the first click.
 function magicStamp(q,ref){const R=region(q);if(!R)return;const{x0,y0,w,h:hh,r,o,mi}=R,m=mi.data,tol2=S.magic.tol**2*3,er=S.magic.mode==='erase',r2=r*r;
   for(let y=0;y<hh;y++)for(let x=0;x<w;x++){const px=x0+x+.5-q.x,py=y0+y+.5-q.y;if(px*px+py*py>r2)continue;
     const i=(y*w+x)*4,dr=o[i]-ref[0],dg=o[i+1]-ref[1],db=o[i+2]-ref[2],t=(dr*dr+dg*dg+db*db)/tol2;if(t>1)continue;
     const s=t<.6?1:(1-t)/.4;m[i]=m[i+1]=m[i+2]=255;m[i+3]=er?Math.min(m[i+3],255*(1-s)):Math.max(m[i+3],255*s)}
   mctx().putImageData(mi,x0,y0)}
-// Hair refinement: brush ke neeche subject aur background ke rang nikal kar kinare ka alpha dobara hisab karta hai.
+// Hair refinement: re-estimates edge alpha from local subject and background colours.
 function hairStamp(q){const R=region(q);if(!R)return;const{x0,y0,w,h:hh,r,o,mi}=R,m=mi.data;let f=[0,0,0],fn=0,b=[0,0,0],bn=0;
   for(let i=0;i<m.length;i+=4){const a=m[i+3];if(a>242){f[0]+=o[i];f[1]+=o[i+1];f[2]+=o[i+2];fn++}else if(a<13){b[0]+=o[i];b[1]+=o[i+1];b[2]+=o[i+2];bn++}}
   if(fn<16||bn<16)return;f=f.map(n=>n/fn);b=b.map(n=>n/bn);
@@ -358,7 +358,7 @@ function hairStamp(q){const R=region(q);if(!R)return;const{x0,y0,w,h:hh,r,o,mi}=
 function stamp(q){if(S.tool==='erase')dab(q,true);else if(S.tool==='restore')dab(q,false);else if(S.tool==='magic')magicStamp(q,drag.ref);else hairStamp(q)}
 function strokeTo(q){const l=drag.last,d=Math.hypot(q.x-l.x,q.y-l.y),step=Math.max(1,S.brush.size*(S.tool==='erase'||S.tool==='restore'?.12:.3));if(d<step)return;
   for(let t=step;t<=d;t+=step)stamp({x:l.x+(q.x-l.x)*t/d,y:l.y+(q.y-l.y)*t/d});drag.last=q;render()}
-// Object selection: click wali jagah se jura hua milta julta rang chunta hai.
+// Object selection: flood-fills similar, connected colours from the clicked point.
 function wand(ix,iy){const{w,h:hh}=doc;doc.px??=octx().getImageData(0,0,w,hh).data;const o=doc.px,mi=mctx().getImageData(0,0,w,hh),m=mi.data;
   const seen=new Uint8Array(w*hh),st=[ix+iy*w],p0=st[0]*4,r=o[p0],g=o[p0+1],b=o[p0+2],tol2=S.select.tol**2*3,a=S.select.action==='keep'?255:0,n=w*hh;seen[st[0]]=1;
   const tryPx=q=>{if(seen[q])return;seen[q]=1;const j=q*4,dr=o[j]-r,dg=o[j+1]-g,db=o[j+2]-b;if(dr*dr+dg*dg+db*db<=tol2)st.push(q)};
@@ -403,7 +403,7 @@ view.addEventListener('pointermove',e=>{
       if(e.shiftKey)d=Math.round(d/15)*15;d=((d+180)%360+360)%360-180;S.sub.rot=Math.round(d);render()}
     else if(drag.k==='scale'){const d0=Math.hypot(drag.p0.x-drag.cx,drag.p0.y-drag.cy)||1,d1=Math.hypot(p.x-drag.cx,p.y-drag.cy),
         b=drag.b,W=doc.w,H=doc.h;S.sub.scale=Math.round(clamp(drag.sub0.scale*d1/d0,10,200));const s=S.sub.scale/100;
-      // dabbe ka beech wahin rahe jahan tha
+      // keep the box center fixed
       S.sub.x=r1(clamp((drag.cx-W/2-(b.x+b.w/2-W/2)*s)/W*100,-100,100));S.sub.y=r1(clamp((drag.cy-H/2-(b.y+b.h/2-H/2)*s)/H*100,-100,100));render()}
     else if(drag.k==='crop'){const x1=clamp(p.x,0,doc.w),y1=clamp(p.y,0,doc.h);cropDraft={x:Math.round(Math.min(drag.x0,x1)),y:Math.round(Math.min(drag.y0,y1)),w:Math.round(Math.abs(x1-drag.x0)),h:Math.round(Math.abs(y1-drag.y0))}}
   }else if(S.tool==='text'&&!space){const k=textHit(p);view.style.cursor=k?(k.k==='scale'?'nwse-resize':'move'):'text'}
@@ -451,7 +451,7 @@ function seg(label,obj,key,opts,cb=render){const g=h('div',{class:'wseg',role:'g
   opts.forEach(([val,txt])=>g.append(h('button',{type:'button','aria-pressed':String(obj[key]===val),onclick:()=>{obj[key]=val;[...g.children].forEach((b,i)=>b.setAttribute('aria-pressed',String(opts[i][0]===val)));cb()}},txt)));
   return h('div',{class:'row'},h('span',{class:'lbl'},label),g)}
 function check(label,obj,key,cb=render){const i=h('input',{type:'checkbox',onchange:e=>{obj[key]=e.target.checked;cb()}});i.checked=obj[key];return h('label',{class:'chk'},i,label)}
-// Hex (#FF6600, FF6600, #F60) ya RGB (255, 102, 0 / rgb(255,102,0)) ko #rrggbb mein badalta hai
+// Converts hex (#FF6600, FF6600, #F60) or RGB (255, 102, 0 / rgb(255,102,0)) to #rrggbb
 function parseColor(v){v=String(v).trim().toLowerCase();let m;
   if((m=/^#?([0-9a-f]{3})$/.exec(v)))return'#'+[...m[1]].map(c=>c+c).join('');
   if((m=/^#?([0-9a-f]{6})$/.exec(v)))return'#'+m[1];
@@ -541,11 +541,11 @@ function encodeTIFF(img){ // uncompressed 8-bit RGBA
     if(tag===258)dv.setUint32(o+8,bps,true);else if(tag===273)dv.setUint32(o+8,off,true);else if(type===3)dv.setUint16(o+8,val,true);else dv.setUint32(o+8,val,true)});
   for(let i=0;i<4;i++)dv.setUint16(bps+i*2,8,true);
   new Uint8Array(buf,off).set(data);return buf}
-// Kya SVG ko asal vector ki shakal mein hi save kiya ja sakta hai? (koi edit na hua ho)
+// Can the SVG be saved as the original vector? (only if nothing was edited)
 const plainSub=u=>u.scale===100&&!u.x&&!u.y&&!u.rot;
 function vectorOK(){const c=doc.crop;return!!doc.svg&&!hist.length&&!doc.paint&&!doc.texts.length&&S.bg.type==='none'&&!S.shadow.on&&plainSub(S.sub)&&!S.edge.feather&&!S.edge.shift&&!c.x&&!c.y&&c.w===doc.w&&c.h===doc.h}
 async function exportCanvas(){const c=doc.crop,ow=X.custom?X.w:c.w,oh=X.custom?X.h:c.h;let src=comp,K=1,tmp=[];
-  // SVG ko bara karna ho to vector se dobara saaf banao (40 MP tak)
+  // When enlarging an SVG source, re-render it from the vector (up to 40 MP)
   const want=doc.svg&&ow>c.w*1.01?Math.min(ow/c.w,Math.sqrt(40e6/(doc.w*doc.h))):1;
   if(want>1.01){const W=Math.round(doc.w*want),H=Math.round(doc.h*want);K=W/doc.w;
     const hi=await rasterSVG(doc.svg,W,H),o2=mk(W,H),c2=mk(W,H),s2=mk(W,H);tmp=[hi,o2,c2,s2];
@@ -556,9 +556,9 @@ async function exportCanvas(){const c=doc.crop,ow=X.custom?X.w:c.w,oh=X.custom?X
   o.imageSmoothingQuality='high';o.drawImage(src,c.x*K,c.y*K,c.w*K,c.h*K,0,0,ow,oh);tmp.forEach(freeCanvas);return out}
 function blobToDataURL(b){return new Promise((r,j)=>{const f=new FileReader();f.onload=()=>r(f.result);f.onerror=j;f.readAsDataURL(b)})}
 async function encode(){
-  if(X.fmt==='svg'&&vectorOK())return new Blob([sizedSVG(doc.svg,X.custom?X.w:doc.w,X.custom?X.h:doc.h)],{type:'image/svg+xml'});  // asal vector
+  if(X.fmt==='svg'&&vectorOK())return new Blob([sizedSVG(doc.svg,X.custom?X.w:doc.w,X.custom?X.h:doc.h)],{type:'image/svg+xml'});  // original vector
   const out=await exportCanvas();
-  if(X.fmt==='svg'){const W=out.width,H=out.height; // SVG ke andar PNG: transparency ke sath, har program mein khulta hai
+  if(X.fmt==='svg'){const W=out.width,H=out.height; // PNG embedded in SVG: keeps transparency, opens everywhere
     return new Promise(r=>out.toBlob(b=>{freeCanvas(out);r(b)},'image/png')).then(async b=>b&&new Blob([
       `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><image width="${W}" height="${H}" xlink:href="${await blobToDataURL(b)}"/></svg>`],{type:'image/svg+xml'}))}
   if(X.fmt==='tiff'){const b=new Blob([encodeTIFF(out.getContext('2d').getImageData(0,0,out.width,out.height))],{type:'image/tiff'});freeCanvas(out);return Promise.resolve(b)}
@@ -587,7 +587,7 @@ const SLUG=document.title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-
 async function doExport(){const b=await encode();if(!b)return toast('Export failed. The image may be too large.');
   let ext=X.fmt;if(X.fmt==='webp'&&b.type!=='image/webp'){ext='png';toast('WebP could not be encoded, so a PNG was saved instead.')}
   const name=`${doc.name}-${SLUG}.${ext}`;
-  if(window.pywebview?.api?.choose_save){ // app window: Windows ka "Save As" dialog
+  if(window.pywebview?.api?.choose_save){ // app window: use the Windows "Save As" dialog
     try{const token=await window.pywebview.api.choose_save(name);if(!token)return;
       const r=await fetch('/save?token='+encodeURIComponent(token),{method:'POST',body:b});
       if(!r.ok)throw new Error(await r.text());$('#exportDlg').close();toast('Saved: '+await r.text())}
@@ -611,12 +611,11 @@ addEventListener('paste',e=>{const f=[...(e.clipboardData?.files||[])].find(f=>f
 $('#props').addEventListener('pointerdown',e=>{if(S.tool==='text'&&curText()&&e.target.closest('input,select,.wseg button,.sw button'))pushHist()},true);
 view.addEventListener('dblclick',()=>{if(S.tool==='text'&&curText())$('#tTxt')?.focus()});
 $('#bVip').onclick=()=>$('#vipDlg').showModal();$('#vipClose').onclick=()=>$('#vipDlg').close();
-$('#vipDlg').addEventListener('click',e=>{if(e.target===e.currentTarget)$('#vipDlg').close()});   // bahar click = band
+$('#vipDlg').addEventListener('click',e=>{if(e.target===e.currentTarget)$('#vipDlg').close()});   // click outside to close
 $('#cCancel').onclick=()=>$('#closeDlg').close();
 $('#cGo').onclick=()=>{$('#closeDlg').close();if(closing>=0)closeTab(closing);closing=-1};
 tabs=[blankTab()];loadTab(0);
 setTool('auto');
 
-/* ---------- server se rabta ---------- */
+/* ---------- startup ---------- */
 loadModels(true);
-setInterval(()=>fetch('/ping').catch(()=>{}),20000);   // app.py ko batata hai ke window khuli hai
