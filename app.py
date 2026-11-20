@@ -10,19 +10,19 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
-import webview  # apni alag window (Edge ki zaroorat nahi)
+import webview  # native app window (no browser needed)
 
-# ================== NAAM YAHAN BADLEIN ==================
-APP_NAME = "Silqen Bg Remover"      # app ka naam: window, title bar, top bar sab jagah yahi aayega
-CREATED_BY = "SubtainAi"    # "Created by" Silqen Studio
+# ================== APP SETTINGS =======================
+APP_NAME = "SILQEN BG REMOVER"    # shown in the window title, top bar and file names
+CREATED_BY = "SubtainAi"    # shown in "Created by Silqen Studio"
 # ========================================================
 
 BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
 WEB = os.path.join(BASE, "web")
-BUNDLED = os.path.join(BASE, "models")                      # installer ke sath aane wale models
-HOME_DIR = os.path.join(os.path.expanduser("~"), ".u2net")  # rembg ki apni jagah
+BUNDLED = os.path.join(BASE, "models")                      # models shipped with the installer
+HOME_DIR = os.path.join(os.path.expanduser("~"), ".u2net")  # rembg's default model folder
 USER_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
-                        APP_NAME, "models")                 # baad mein download hone wale models
+                        APP_NAME, "models")                 # models downloaded later
 
 PORT = 8765
 URL = f"http://127.0.0.1:{PORT}/"
@@ -35,9 +35,9 @@ FILES = {
 }
 sessions = {}
 lock = threading.Lock()
-window = None        # app ki window (neeche main mein banti hai)
-pending_saves = {}   # Save dialog mein chuni gayi jagah, ek dafa istemal hone wale token ke sath
-last_dir = ""        # pichli dafa jis folder mein save kiya
+window = None        # app window (created in __main__)
+pending_saves = {}   # save paths chosen in the Save dialog, keyed by one-time token
+last_dir = ""        # last folder used for saving
 
 
 def find_model(name):
@@ -52,9 +52,9 @@ def model_list():
 
 
 def get_session(name):
-    # Hamesha lock ke andar bulayein. Model na ho to rembg use USER_DIR mein download karta hai.
+    # Always call while holding `lock`. If the model is missing, rembg downloads it to USER_DIR.
     if name not in sessions:
-        # RAM bachane ke liye ek waqt mein sirf ek model: naya model lene se pehle purana nikaal do
+        # Keep only one model in memory: unload the previous one before loading a new one
         sessions.clear()
         gc.collect()
         folder = find_model(name)
@@ -68,10 +68,10 @@ def get_session(name):
 
 
 class Api:
-    """Ye functions editor.js se window.pywebview.api.<naam>() ke zariye chalte hain."""
+    """Methods callable from editor.js as window.pywebview.api.<name>()."""
 
     def choose_save(self, filename):
-        # Windows ka "Save As" dialog kholta hai. Cancel par None.
+        # Opens the Windows "Save As" dialog. Returns None if cancelled.
         global last_dir
         ext = os.path.splitext(filename)[1].lstrip(".").lower() or "png"
         result = window.create_file_dialog(
@@ -104,7 +104,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/ping":
             self.reply(200, "text/plain", b"ok")
         elif path == "/focus":
-            # App dobara kholi gayi: nayi window ke bajaye pehli wali ko samne le aao
+            # The app was launched again: bring the existing window to the front
             try:
                 window.restore()
                 window.on_top = True
@@ -134,7 +134,7 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         query = parse_qs(url.query)
         if url.path == "/save":
-            # Sirf wahi jagah jo user ne Save dialog mein khud chuni ho
+            # Only write to a path the user picked in the Save dialog
             target = pending_saves.pop(query.get("token", [""])[0], None)
             if not target:
                 return self.reply(403, "text/plain", b"Save location not chosen")
@@ -168,15 +168,15 @@ class Handler(BaseHTTPRequestHandler):
             msg = str(e)
             if isinstance(e, MemoryError) or "alloc" in msg.lower():
                 with lock:
-                    sessions.clear()   # adhoora model RAM se nikaal do
+                    sessions.clear()   # unload the partly loaded model
                 msg = "Not enough memory for this model. Please use Balanced or Fast."
             self.reply(500, "text/plain; charset=utf-8", msg.encode())
         finally:
-            gc.collect()   # kaam ke baad bachi hui RAM wapas do
+            gc.collect()   # release memory after each request
 
 
 def warmup():
-    # App khulte hi maujood model load kar lo (download kabhi nahi karta)
+    # Preload an installed model at startup (never downloads)
     try:
         installed = [m[0] for m in model_list() if m[2]]
         if not installed:
@@ -192,7 +192,7 @@ if __name__ == "__main__":
     try:
         server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     except OSError:
-        # App pehle se khuli hai: usi ki window samne le aao aur yeh copy band kar do
+        # Already running: focus the existing window and exit this copy
         try:
             urlopen(URL + "focus", timeout=3)
         except Exception:
@@ -203,4 +203,4 @@ if __name__ == "__main__":
     window = webview.create_window(APP_NAME, URL, js_api=Api(), width=1400, height=900,
                                    min_size=(900, 600), background_color="#17191D")
     webview.start()
-    os._exit(0)  # window band = app poori tarah band (Task Manager ki zaroorat nahi)
+    os._exit(0)  # closing the window fully exits the app
