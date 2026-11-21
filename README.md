@@ -10,7 +10,7 @@
 
 | Work in tabs |
 |---|
-| ![Tabs](screenshots/text editor.png) | 
+| ![Tabs](screenshots/texteditor.png) | 
 
 ## Features
 
