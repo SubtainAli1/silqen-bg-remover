@@ -2,7 +2,7 @@
 
 **An AI background remover and photo editor for Windows that runs entirely on your computer.** Your images are never uploaded anywhere.
 
-![SILQEN BG REMOVER screenshot](screenshot.png)
+![SILQEN BG REMOVER screenshot](screenshot.png)(Edited screenshot.png) 
 
 ## Features
 
