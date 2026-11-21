@@ -6,7 +6,7 @@
 
 | Move, resize and rotate | Text and paint |
 |---|---|
-| ![Move tool](screenshots/Edited screenshot.png) | ![Text tool](screenshots/compare.png) |
+| ![Move tool](screenshots/editscreenshot.png) | ![Text tool](screenshots/compare.png) |
 
 | Work in tabs |
 |---|
