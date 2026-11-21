@@ -2,7 +2,7 @@
 ; To change the name or version, edit only the #define lines below.
 #define MyAppName "SILQEN BG REMOVER"
 #define MyAppVersion "3.0"
-#define MyPublisher "Muhammad Zaheer"
+#define MyPublisher "SubtainAi"
 #define MyExe "SILQEN BG REMOVER.exe"
 
 [Setup]
